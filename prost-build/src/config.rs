@@ -33,8 +33,15 @@ pub struct Config {
     pub(crate) bytes_type: PathMap<BytesType>,
     pub(crate) type_attributes: PathMap<String>,
     pub(crate) message_attributes: PathMap<String>,
+    pub(crate) message_field_attributes: PathMap<String>, // TODO: adder
     pub(crate) enum_attributes: PathMap<String>,
+    pub(crate) bare_enum_attributes: PathMap<String>,
+    pub(crate) bare_enum_variant_attributes: PathMap<String>, // TODO: adder
     pub(crate) field_attributes: PathMap<String>,
+    pub(crate) oneof_attributes: PathMap<String>,
+    pub(crate) oneof_variant_attributes: PathMap<String>, // TODO: also is a field
+    pub(crate) impl_attributes: PathMap<String>, // TODO
+    pub(crate) module_attributes: PathMap<String>,
     pub(crate) boxed: PathMap<()>,
     pub(crate) prost_types: bool,
     pub(crate) strip_enum_prefix: bool,
@@ -348,6 +355,64 @@ impl Config {
     {
         self.enum_attributes
             .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+        self
+    }
+
+    pub fn bare_enum_attribute<P, A>(&mut self, path: P, attribute: A) -> &mut Self
+    where
+        P: AsRef<str>,
+        A: AsRef<str>,
+    {
+        self.bare_enum_attributes
+            .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+        self
+    }
+
+    pub fn bare_enum_variant_attribute<P, A>(&mut self, path: P, attribute: A) -> &mut Self
+    where
+        P: AsRef<str>,
+        A: AsRef<str>,
+    {
+        self.bare_enum_variant_attributes
+            .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+        self
+    }
+
+    pub fn oneof_attribute<P, A>(&mut self, path: P, attribute: A) -> &mut Self
+    where
+        P: AsRef<str>,
+        A: AsRef<str>,
+    {
+        self.oneof_attributes
+            .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+        self
+    }
+
+    pub fn oneof_variant_attribute<P, A>(&mut self, path: P, attribute: A) -> &mut Self
+    where
+        P: AsRef<str>,
+        A: AsRef<str>,
+    {
+        self.oneof_variant_attributes
+            .insert(path.as_ref().to_string(), attribute.as_ref().to_string());
+        self
+    }
+
+    pub fn message_field_attribute(&mut self, path: &str, attribute: &str) -> &mut Self {
+        self.message_field_attributes
+            .insert(path.to_string(), attribute.to_string());
+        self
+    }
+
+    pub fn impl_attribute(&mut self, path: &str, attribute: &str) -> &mut Self {
+        self.impl_attributes
+            .insert(path.to_string(), attribute.to_string());
+        self
+    }
+
+    pub fn module_attribute(&mut self, path: &str, attribute: &str) -> &mut Self {
+        self.module_attributes
+            .insert(path.to_string(), attribute.to_string());
         self
     }
 
@@ -917,16 +982,16 @@ impl Config {
             debug!("Running: {:?}", cmd);
 
             let output = match cmd.output() {
-            Err(err) if ErrorKind::NotFound == err.kind() => return Err(Error::new(
-                err.kind(),
-                error_message_protoc_not_found()
-            )),
-            Err(err) => return Err(Error::new(
-                err.kind(),
-                format!("failed to invoke protoc (hint: https://docs.rs/prost-build/#sourcing-protoc): (path: {:?}): {}", &protoc, err),
-            )),
-            Ok(output) => output,
-        };
+                Err(err) if ErrorKind::NotFound == err.kind() => return Err(Error::new(
+                    err.kind(),
+                    error_message_protoc_not_found()
+                )),
+                Err(err) => return Err(Error::new(
+                    err.kind(),
+                    format!("failed to invoke protoc (hint: https://docs.rs/prost-build/#sourcing-protoc): (path: {:?}): {}", &protoc, err),
+                )),
+                Ok(output) => output,
+            };
 
             if !output.status.success() {
                 return Err(Error::new(
@@ -1090,8 +1155,15 @@ impl default::Default for Config {
             bytes_type: PathMap::default(),
             type_attributes: PathMap::default(),
             message_attributes: PathMap::default(),
+            message_field_attributes: PathMap::default(),
             enum_attributes: PathMap::default(),
+            bare_enum_attributes: PathMap::default(),
+            bare_enum_variant_attributes: PathMap::default(),
+            oneof_attributes: PathMap::default(),
+            oneof_variant_attributes: PathMap::default(),
             field_attributes: PathMap::default(),
+            impl_attributes: PathMap::default(),
+            module_attributes: PathMap::default(),
             boxed: PathMap::default(),
             prost_types: true,
             strip_enum_prefix: true,

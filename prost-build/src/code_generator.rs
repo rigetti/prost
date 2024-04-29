@@ -18,6 +18,7 @@ use crate::ast::{Comments, Method, Service};
 use crate::extern_paths::ExternPaths;
 use crate::ident::{strip_enum_prefix, to_snake, to_upper_camel};
 use crate::message_graph::MessageGraph;
+use crate::path::PathMap;
 use crate::Config;
 
 mod c_escaping;
@@ -270,7 +271,7 @@ impl<'a> CodeGenerator<'a> {
         self.buf.push_str("}\n");
 
         if !message.enum_type.is_empty() || !nested_types.is_empty() || !oneof_fields.is_empty() {
-            self.push_mod(&message_name);
+            self.push_mod(&message_name, &fq_message_name);
             self.path.push(3);
             for (nested_type, idx) in nested_types {
                 self.path.push(idx as i32);
@@ -344,22 +345,28 @@ impl<'a> CodeGenerator<'a> {
         self.buf.push_str("}\n");
     }
 
-    fn append_type_attributes(&mut self, fq_message_name: &str) {
+    fn append_attributes(buf: &mut String, path_attr_map: &PathMap<String>, depth: u8, fq_message_name: &str, field_name: Option<&str>) {
         assert_eq!(b'.', fq_message_name.as_bytes()[0]);
-        for attribute in self.config.type_attributes.get(fq_message_name) {
-            push_indent(self.buf, self.depth);
-            self.buf.push_str(attribute);
-            self.buf.push('\n');
+
+        let attributes = if let Some(field_name) = field_name {
+            path_attr_map.get_field(fq_message_name, field_name)
+        } else {
+            path_attr_map.get(fq_message_name)
+        };
+
+        for attribute in attributes {
+            push_indent(buf, depth);
+            buf.push_str(attribute);
+            buf.push('\n');
         }
     }
 
+    fn append_type_attributes(&mut self, fq_message_name: &str) {
+        Self::append_attributes(self.buf, &self.config.type_attributes, self.depth, fq_message_name, None);
+    }
+
     fn append_message_attributes(&mut self, fq_message_name: &str) {
-        assert_eq!(b'.', fq_message_name.as_bytes()[0]);
-        for attribute in self.config.message_attributes.get(fq_message_name) {
-            push_indent(self.buf, self.depth);
-            self.buf.push_str(attribute);
-            self.buf.push('\n');
-        }
+        Self::append_attributes(self.buf, &self.config.message_attributes, self.depth, fq_message_name, None);
     }
 
     fn should_skip_debug(&self, fq_message_name: &str) -> bool {
@@ -376,25 +383,39 @@ impl<'a> CodeGenerator<'a> {
     }
 
     fn append_enum_attributes(&mut self, fq_message_name: &str) {
-        assert_eq!(b'.', fq_message_name.as_bytes()[0]);
-        for attribute in self.config.enum_attributes.get(fq_message_name) {
-            push_indent(self.buf, self.depth);
-            self.buf.push_str(attribute);
-            self.buf.push('\n');
-        }
+        Self::append_attributes(self.buf, &self.config.enum_attributes, self.depth, fq_message_name, None);
+    }
+
+    fn append_bare_enum_attributes(&mut self, fq_message_name: &str) {
+        Self::append_attributes(self.buf, &self.config.bare_enum_attributes, self.depth, fq_message_name, None);
+    }
+
+    fn append_bare_enum_variant_attributes(&mut self, fq_message_name: &str, variant_name: &str) {
+        Self::append_attributes(self.buf, &self.config.bare_enum_variant_attributes, self.depth, fq_message_name, Some(variant_name));
+    }
+
+    fn append_oneof_attributes(&mut self, fq_message_name: &str) {
+        Self::append_attributes(self.buf, &self.config.oneof_attributes, self.depth, fq_message_name, None);
+    }
+
+    fn append_oneof_variant_attributes(&mut self, fq_message_name: &str, variant_name: &str) {
+        Self::append_attributes(self.buf, &self.config.oneof_variant_attributes, self.depth, fq_message_name, Some(variant_name));
+    }
+
+    fn append_impl_attributes(&mut self, fq_message_name: &str) {
+        Self::append_attributes(self.buf, &self.config.impl_attributes, self.depth, fq_message_name, None);
+    }
+
+    fn append_module_attributes(&mut self, fq_message_name: &str) {
+        Self::append_attributes(self.buf, &self.config.module_attributes, self.depth, fq_message_name, None);
     }
 
     fn append_field_attributes(&mut self, fq_message_name: &str, field_name: &str) {
-        assert_eq!(b'.', fq_message_name.as_bytes()[0]);
-        for attribute in self
-            .config
-            .field_attributes
-            .get_field(fq_message_name, field_name)
-        {
-            push_indent(self.buf, self.depth);
-            self.buf.push_str(attribute);
-            self.buf.push('\n');
-        }
+        Self::append_attributes(self.buf, &self.config.field_attributes, self.depth, fq_message_name, Some(field_name));
+    }
+
+    fn append_message_field_attributes(&mut self, fq_message_name: &str, field_name: &str) {
+        Self::append_attributes(self.buf, &self.config.message_field_attributes, self.depth, fq_message_name, Some(field_name));
     }
 
     fn append_field(&mut self, fq_message_name: &str, field: &Field) {
@@ -505,6 +526,7 @@ impl<'a> CodeGenerator<'a> {
 
         self.buf.push_str("\")]\n");
         self.append_field_attributes(fq_message_name, field.descriptor.name());
+        self.append_message_field_attributes(fq_message_name, field.descriptor.name());
         self.push_indent();
         self.buf.push_str("pub ");
         self.buf.push_str(&field.rust_name());
@@ -569,6 +591,7 @@ impl<'a> CodeGenerator<'a> {
             field.descriptor.number()
         ));
         self.append_field_attributes(fq_message_name, field.descriptor.name());
+        self.append_message_field_attributes(fq_message_name, field.descriptor.name());
         self.push_indent();
         self.buf.push_str(&format!(
             "pub {}: {}<{}, {}>,\n",
@@ -602,6 +625,7 @@ impl<'a> CodeGenerator<'a> {
                 .join(", "),
         ));
         self.append_field_attributes(fq_message_name, oneof.descriptor.name());
+        self.append_message_field_attributes(fq_message_name, oneof.descriptor.name());
         self.push_indent();
         self.buf.push_str(&format!(
             "pub {}: ::core::option::Option<{}>,\n",
@@ -620,6 +644,7 @@ impl<'a> CodeGenerator<'a> {
         let oneof_name = format!("{}.{}", fq_message_name, oneof.descriptor.name());
         self.append_type_attributes(&oneof_name);
         self.append_enum_attributes(&oneof_name);
+        self.append_oneof_attributes(&oneof_name);
         self.push_indent();
         self.buf
             .push_str("#[allow(clippy::derive_partial_eq_without_eq)]\n");
@@ -650,6 +675,7 @@ impl<'a> CodeGenerator<'a> {
                 field.descriptor.number()
             ));
             self.append_field_attributes(&oneof_name, field.descriptor.name());
+            self.append_oneof_variant_attributes(&oneof_name, field.descriptor.name());
 
             self.push_indent();
             let ty = self.resolve_type(&field.descriptor, fq_message_name);
@@ -737,6 +763,7 @@ impl<'a> CodeGenerator<'a> {
         self.append_doc(&fq_proto_enum_name, None);
         self.append_type_attributes(&fq_proto_enum_name);
         self.append_enum_attributes(&fq_proto_enum_name);
+        self.append_bare_enum_attributes(&fq_proto_enum_name);
         self.push_indent();
         let dbg = if self.should_skip_debug(&fq_proto_enum_name) {
             ""
@@ -765,6 +792,7 @@ impl<'a> CodeGenerator<'a> {
 
             self.append_doc(&fq_proto_enum_name, Some(variant.proto_name));
             self.append_field_attributes(&fq_proto_enum_name, variant.proto_name);
+            self.append_bare_enum_variant_attributes(&fq_proto_enum_name, variant.proto_name);
             self.push_indent();
             self.buf.push_str(&variant.generated_variant_name);
             self.buf.push_str(" = ");
@@ -780,6 +808,7 @@ impl<'a> CodeGenerator<'a> {
         self.push_indent();
         self.buf.push_str("}\n");
 
+        self.append_impl_attributes(&fq_proto_enum_name);
         self.push_indent();
         self.buf.push_str("impl ");
         self.buf.push_str(&enum_name);
@@ -932,13 +961,14 @@ impl<'a> CodeGenerator<'a> {
         push_indent(self.buf, self.depth);
     }
 
-    fn push_mod(&mut self, module: &str) {
+    fn push_mod(&mut self, module: &str, fq_module_name: &str) {
         self.push_indent();
         self.buf.push_str("/// Nested message and enum types in `");
         self.buf.push_str(module);
         self.buf.push_str("`.\n");
 
         self.push_indent();
+        self.append_module_attributes(fq_module_name);
         self.buf.push_str("pub mod ");
         self.buf.push_str(&to_snake(module));
         self.buf.push_str(" {\n");
